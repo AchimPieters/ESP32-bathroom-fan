@@ -1,0 +1,59 @@
+menu "StudioPieters"
+
+    config ESP_LED_GPIO
+        int "Set the GPIO for the LED"
+        default 2
+        help
+            The GPIO number the LED is connected to.
+
+    config ESP_BUTTON_GPIO
+        int "Button GPIO"
+        default 32
+        help
+            GPIO van de knop (actief laag als je button_config_default(button_active_low) gebruikt).
+
+    config ESP_FAN_LOW_GPIO
+        int "Remote button GPIO - LOW"
+        default 25
+        help
+            ESP32 GPIO die naar de LOW-knop pad van de originele remote gaat (active-low naar GND via open-drain).
+
+    config ESP_FAN_MED_GPIO
+        int "Remote button GPIO - MED"
+        default 26
+        help
+            ESP32 GPIO die naar de MED-knop pad van de originele remote gaat (active-low naar GND via open-drain).
+
+    config ESP_FAN_HIGH_GPIO
+        int "Remote button GPIO - HIGH"
+        default 27
+        help
+            ESP32 GPIO die naar de HIGH-knop pad van de originele remote gaat (active-low naar GND via open-drain).
+
+    config ESP_REMOTE_PULSE_MS
+        int "Remote pulse length (ms)"
+        default 200
+        range 50 1000
+        help
+            Lengte van een knopdruk-puls naar de originele remote.
+
+    config ESP_REMOTE_LOCKOUT_MS
+        int "Remote lockout (ms)"
+        default 600
+        range 0 5000
+        help
+            Minimale tijd tussen twee pulsjes om dubbel triggers te voorkomen.
+
+    config ESP_SETUP_CODE
+        string "HomeKit Setup Code"
+        default "338-77-883"
+        help
+            If you want to change the HomeKit Setup Code, you can do that here (Note: you need to make a new QR-CODE To make it work)
+
+    config ESP_SETUP_ID
+        string "HomeKit Setup ID"
+        default "1QJ8"
+        help
+            If you want to change the HomeKit Setup ID, you can do that here (Note: you need to make a new QR-CODE To make it work)
+
+endmenu
