@@ -243,7 +243,7 @@ void button_callback(button_event_t event, void *context) {
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Woverride-init"
 homekit_accessory_t *accessories[] = {
-    HOMEKIT_ACCESSORY(.id = 1, .category = homekit_accessory_category_fan, .services = (homekit_service_t*[]) {
+    HOMEKIT_ACCESSORY(.id = 1, .category = homekit_accessory_category_fans, .services = (homekit_service_t*[]) {
         HOMEKIT_SERVICE(ACCESSORY_INFORMATION, .characteristics = (homekit_characteristic_t*[]) {
             &name,
             &manufacturer,
@@ -254,7 +254,7 @@ homekit_accessory_t *accessories[] = {
             NULL
         }),
 
-        HOMEKIT_SERVICE(FAN2, .primary = true, .characteristics = (homekit_characteristic_t*[]) {
+        HOMEKIT_SERVICE(FAN, .primary = true, .characteristics = (homekit_characteristic_t*[]) {
             HOMEKIT_CHARACTERISTIC(NAME, "Ventilator"),
             HOMEKIT_CHARACTERISTIC(ON, true, .getter = fan_active_get, .setter = fan_active_set),
             HOMEKIT_CHARACTERISTIC(ROTATION_SPEED, 33, .getter = rotation_speed_get, .setter = rotation_speed_set),
