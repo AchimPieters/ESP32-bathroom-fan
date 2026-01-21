@@ -30,29 +30,15 @@ menu "StudioPieters"
         help
             ESP32 GPIO die naar de HIGH-knop pad van de originele remote gaat (active-low naar GND via open-drain).
 
-    config ESP_REMOTE_PULSE_MS
-        int "Remote pulse length (ms)"
-        default 200
-        range 50 1000
-        help
-            Lengte van een knopdruk-puls naar de originele remote.
-
-    config ESP_REMOTE_LOCKOUT_MS
-        int "Remote lockout (ms)"
-        default 600
-        range 0 5000
-        help
-            Minimale tijd tussen twee pulsjes om dubbel triggers te voorkomen.
-
     config ESP_SETUP_CODE
         string "HomeKit Setup Code"
-        default "338-77-883"
+        default "374-29-730"
         help
             If you want to change the HomeKit Setup Code, you can do that here (Note: you need to make a new QR-CODE To make it work)
 
     config ESP_SETUP_ID
         string "HomeKit Setup ID"
-        default "1QJ8"
+        default "F5Z1"
         help
             If you want to change the HomeKit Setup ID, you can do that here (Note: you need to make a new QR-CODE To make it work)
 
