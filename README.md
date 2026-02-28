@@ -1,82 +1,221 @@
-# Bathroom Fan Remote (HomeKit) + SHT30 Sensor (ESP32)
+# HomeKit Bathroom Ventilation Controller
 
-This project turns an ESP32 into a **HomeKit-enabled bathroom fan controller** with **automatic humidity control**.
+**ESP32 • Lifecycle Manager • SHT3X • ISO-style Humidity Control**
 
-It is made for bathroom fans with **3 fixed speed levels**, controlled via “remote button inputs” (the ESP32 simulates those button presses using short GPIO pulses).
+This project implements a professional **bathroom ventilation
+controller** based on ESP32 using:
 
-In addition to fan control, the device includes an **SHT30 / SHT3x temperature + humidity sensor**, and publishes those readings to Apple Home (HomeKit).
+-   HomeKit (HAP compliant)
+-   Lifecycle Manager (LCM)
+-   SHT3X temperature & humidity sensor
+-   Automatic humidity-based fan control
+-   Manual override with auto fallback
+-   HAP-safe notification rate limiting
+-   OTA firmware updates
+-   Hardware button support
+-   Identify LED
+-   Fully autonomous offline operation
 
----
+------------------------------------------------------------------------
 
-## What you get in Apple Home (HomeKit)
+# Overview
 
-After pairing the accessory, you will see:
+This is not just a fan switch.
 
-### 1) **Fan tile**
-- **On / Off button**
-- **Speed slider (0–100%)**
+It is a **smart bathroom ventilation controller** designed to:
 
-### 2) **Bathroom Temperature**
-- Live temperature (°C)
+-   Automatically activate during showering
+-   Prevent condensation and mold formation
+-   Avoid rapid toggling (hysteresis)
+-   Enforce minimum ventilation runtime
+-   Return safely to automatic mode after manual override
+-   Operate fully offline if HomeKit is unavailable
 
-### 3) **Bathroom Humidity**
-- Live humidity (% RH)
+The control logic runs locally on the ESP32.\
+HomeKit is optional for remote control and monitoring.
 
----
+------------------------------------------------------------------------
 
-## How the fan control works (end-user view)
+# Ventilation Logic (ISO-style Behavior)
 
-Your fan has **3 real speeds**, even though HomeKit shows a slider:
+The fan automatically activates when:
 
-| Fan slider in HomeKit | Real fan mode |
-|-----------------------|--------------|
-| 0–33%                 | Low *(treated as Off)* |
-| 34–66%                | Medium |
-| 67–100%               | High |
+-   Humidity rises above a configured threshold (default: 65%)
+-   OR a rapid humidity spike is detected (shower detection)
+-   OR temperature exceeds configured threshold (optional boost)
 
-To keep the user experience clear, the slider will “snap” to:
+The fan stops only when:
 
-- **0%** (Low / Off)
-- **50%** (Medium)
-- **100%** (High)
+-   Humidity drops below threshold minus hysteresis
+-   AND minimum runtime has passed
 
----
+This prevents oscillation and short cycling.
 
-## “Off” in the Home app = Low speed
-When you press **Off** in HomeKit, the fan is placed into **Low mode**.
+------------------------------------------------------------------------
 
-This is intentional:
-- It provides a safe default state
-- After a reboot, the fan always returns to a predictable level
+# Fan Speeds
 
-So in everyday usage:
+  Mode   Output Level
+  ------ --------------
+  LOW    30%
+  MID    60%
+  HIGH   100%
 
-**Off (HomeKit)** → Fan **Low speed**  
-**On (HomeKit)** → Fan **Medium speed** (default “On” level)
+Fan control uses **active-low GPIO pulses** to simulate remote button
+presses.
 
----
+------------------------------------------------------------------------
 
-## Automatic mode (default)
+# Manual Override
 
-This accessory is designed to work in **Automatic mode by default**.
+The user can control the fan from HomeKit:
 
-That means the fan can automatically switch between:
+-   Turn ON/OFF
+-   Set speed
 
-- **Low** (HomeKit Off)
-- **Medium**
-- **High**
+After **20 minutes**, the system automatically returns to AUTO mode.
 
-based on the bathroom humidity.
+------------------------------------------------------------------------
 
-### Typical shower behavior
-When you start showering:
-- humidity rises quickly
-- the fan automatically switches to **High**
+# Sensor Processing
 
-After the shower:
-- the fan slowly returns to **Medium**
-- then back to **Low** when the bathroom is dry again
+To ensure stable readings:
 
----
+-   EMA smoothing is applied
+-   Baseline humidity is learned
+-   Relative rise detection identifies shower events
+-   Delta-based reporting prevents noise notifications
 
-## 
+------------------------------------------------------------------------
+
+# HAP-Safe Notification Strategy
+
+To comply with Apple HAP guidelines:
+
+-   Temperature notify only if change \> 0.2°C
+-   Humidity notify only if change \> 0.5%
+-   Minimum notify interval enforced
+-   Spike detection allows temporary faster reporting
+-   Maximum events per minute limited
+
+This prevents:
+
+-   TCP buffer overflow
+-   iOS throttling
+-   OTA instability
+-   HomeKit disconnects
+
+------------------------------------------------------------------------
+
+# Lifecycle Manager Integration
+
+## Included Headers
+
+``` c
+#include "esp32-lcm.h"
+#include <button.h>
+#include "sht3x.h"
+```
+
+------------------------------------------------------------------------
+
+## Firmware Version & OTA
+
+``` c
+homekit_characteristic_t revision =
+    HOMEKIT_CHARACTERISTIC_(FIRMWARE_REVISION, LIFECYCLE_DEFAULT_FW_VERSION);
+
+homekit_characteristic_t ota_trigger = API_OTA_TRIGGER;
+```
+
+OTA can be triggered from:
+
+-   Home app
+-   Hardware button
+
+------------------------------------------------------------------------
+
+# Wi-Fi Handling
+
+Wi-Fi is started using Lifecycle Manager:
+
+``` c
+wifi_start(on_wifi_ready);
+```
+
+The device:
+
+-   Automatically reconnects
+-   Supports provisioning
+-   Works offline if Wi-Fi is unavailable
+
+------------------------------------------------------------------------
+
+# Hardware Button
+
+Configured using `esp32-button`.
+
+  Action         Result
+  -------------- ---------------------------------
+  Single press   Request OTA update
+  Double press   Reset HomeKit pairing
+  Long press     Factory reset (Wi-Fi + HomeKit)
+
+------------------------------------------------------------------------
+
+# Identify LED
+
+Used for HomeKit identify.
+
+  State   LED
+  ------- -----
+  HIGH    ON
+  LOW     OFF
+
+------------------------------------------------------------------------
+
+# Wiring
+
+  Name                       Description       Default
+  -------------------------- ----------------- --------------
+  CONFIG_ESP_LED_GPIO        Identify LED      2
+  CONFIG_ESP_BUTTON_GPIO     Hardware button   32
+  CONFIG_ESP_FAN_LOW_GPIO    Fan LOW pulse     configurable
+  CONFIG_ESP_FAN_MED_GPIO    Fan MID pulse     configurable
+  CONFIG_ESP_FAN_HIGH_GPIO   Fan HIGH pulse    configurable
+  CONFIG_I2C_MASTER_SCL      I2C SCL           22
+  CONFIG_I2C_MASTER_SDA      I2C SDA           21
+  CONFIG_SHT3X_I2C_ADDRESS   Sensor address    0x44
+
+  ![scheme](scheme.png)
+
+------------------------------------------------------------------------
+
+# Requirements
+
+-   ESP-IDF \>= 5.0
+-   achimpieters/esp32-homekit \>= 1.3.3
+-   achimpieters/esp32-button \>= 1.2.3
+-   achimpieters/esp32-sht3x \^1.0.7
+-   wolfssl
+-   mdns
+
+------------------------------------------------------------------------
+
+#  Expected Behavior
+
+After flashing:
+
+1.  Device boots
+2.  Lifecycle initializes
+3.  Wi-Fi connects (or provisioning required)
+4.  Sensor starts measuring
+5.  AUTO mode active
+6.  Fan reacts to humidity & temperature
+
+Manual override automatically returns to AUTO after 20 minutes.
+
+------------------------------------------------------------------------
+
+**StudioPieters®**\
+Professional Embedded HomeKit Solutions

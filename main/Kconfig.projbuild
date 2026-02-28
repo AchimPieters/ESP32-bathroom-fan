@@ -48,13 +48,6 @@ menu "StudioPieters"
         help
             SHT3x adres: meestal 0x44, soms 0x45 afhankelijk van ADDR pin.
 
-    config ESP_HUMIDITY_AUTO_ENABLE
-        bool "Enable automatic humidity fan control (SHT3x)"
-        default y
-        help
-            Schakelt de automatische vochtregeling in/uit.
-            Handig voor debug: zet uit om alleen handmatig via HomeKit te testen.
-
     config ESP_SETUP_CODE
         string "HomeKit Setup Code"
         default "374-29-730"
