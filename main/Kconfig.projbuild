@@ -1,55 +1,89 @@
 menu "StudioPieters"
 
+    #
+    # LED
+    #
     config ESP_LED_GPIO
-        int "Set the GPIO for the LED"
+        int "LED GPIO"
         default 2  if IDF_TARGET_ESP32
         default 8  if IDF_TARGET_ESP32C3
         range 0 39 if IDF_TARGET_ESP32
         range 0 21 if IDF_TARGET_ESP32C3
         help
-            The GPIO number the LED is connected to.
-            ESP32: GPIO2 commonly used on devkits.
-            ESP32-C3: GPIO8 commonly used on devkits.
+            GPIO number where the status LED is connected.
 
+            ESP32:
+                GPIO2 is commonly used on development boards.
+
+            ESP32-C3 Super Mini:
+                GPIO8 is the onboard LED.
+
+    #
+    # BUTTON
+    #
     config ESP_BUTTON_GPIO
         int "Button GPIO"
         default 32 if IDF_TARGET_ESP32
-        default 9  if IDF_TARGET_ESP32C3
+        default 3  if IDF_TARGET_ESP32C3
         range 0 39 if IDF_TARGET_ESP32
         range 0 21 if IDF_TARGET_ESP32C3
         help
-            GPIO van de knop (actief laag bij gebruik van button_active_low).
+            GPIO connected to the external button.
+            Typically configured as active-low.
 
+            ESP32-C3:
+                GPIO3 is recommended.
+                Avoid GPIO9 (BOOT button).
+                Avoid GPIO0 and GPIO2 (strapping pins).
+
+    #
+    # FAN CONTROL GPIOs
+    #
     config ESP_FAN_LOW_GPIO
-        int "Remote button GPIO - LOW"
+        int "Remote Button GPIO - LOW"
         default 25 if IDF_TARGET_ESP32
         default 4  if IDF_TARGET_ESP32C3
         range 0 39 if IDF_TARGET_ESP32
         range 0 21 if IDF_TARGET_ESP32C3
         help
-            GPIO die naar de LOW-knop pad van de originele remote gaat
-            (active-low naar GND via open-drain).
+            GPIO connected to the LOW button pad
+            of the original remote control.
+
+            Should be configured as open-drain
+            and active-low to GND.
 
     config ESP_FAN_MED_GPIO
-        int "Remote button GPIO - MED"
+        int "Remote Button GPIO - MED"
         default 26 if IDF_TARGET_ESP32
         default 5  if IDF_TARGET_ESP32C3
         range 0 39 if IDF_TARGET_ESP32
         range 0 21 if IDF_TARGET_ESP32C3
         help
-            GPIO die naar de MED-knop pad van de originele remote gaat
-            (active-low naar GND via open-drain).
+            GPIO connected to the MED button pad
+            of the original remote control.
+
+            Should be configured as open-drain
+            and active-low to GND.
 
     config ESP_FAN_HIGH_GPIO
-        int "Remote button GPIO - HIGH"
+        int "Remote Button GPIO - HIGH"
         default 27 if IDF_TARGET_ESP32
-        default 6  if IDF_TARGET_ESP32C3
+        default 10 if IDF_TARGET_ESP32C3
         range 0 39 if IDF_TARGET_ESP32
         range 0 21 if IDF_TARGET_ESP32C3
         help
-            GPIO die naar de HIGH-knop pad van de originele remote gaat
-            (active-low naar GND via open-drain).
+            GPIO connected to the HIGH button pad
+            of the original remote control.
 
+            ESP32-C3:
+                GPIO10 is recommended.
+                Avoid GPIO9 (BOOT).
+                Avoid GPIO20/21 (USB).
+                Avoid GPIO0/2 (strapping).
+
+    #
+    # I2C (SHT3x)
+    #
     config I2C_MASTER_SCL
         int "I2C SCL GPIO (SHT3x)"
         default 22 if IDF_TARGET_ESP32
@@ -57,7 +91,10 @@ menu "StudioPieters"
         range 0 39 if IDF_TARGET_ESP32
         range 0 21 if IDF_TARGET_ESP32C3
         help
-            GPIO voor I2C SCL naar de SHT3x.
+            GPIO used for I2C SCL connected to the SHT3x sensor.
+
+            ESP32-C3 Super Mini:
+                GPIO7 is labeled SCL on the board.
 
     config I2C_MASTER_SDA
         int "I2C SDA GPIO (SHT3x)"
@@ -66,26 +103,41 @@ menu "StudioPieters"
         range 0 39 if IDF_TARGET_ESP32
         range 0 21 if IDF_TARGET_ESP32C3
         help
-            GPIO voor I2C SDA naar de SHT3x.
+            GPIO used for I2C SDA connected to the SHT3x sensor.
+
+            ESP32-C3 Super Mini:
+                GPIO6 is labeled SDA on the board.
 
     config SHT3X_I2C_ADDRESS
-        hex "SHT3x I2C address"
+        hex "SHT3x I2C Address"
         default 0x44
         help
-            SHT3x adres: meestal 0x44, soms 0x45 afhankelijk van ADDR pin.
+            I2C address of the SHT3x sensor.
 
+            Typically:
+                0x44
+            Sometimes:
+                0x45 (depending on ADDR pin wiring).
+
+    #
+    # HOMEKIT
+    #
     config ESP_SETUP_CODE
         string "HomeKit Setup Code"
         default "374-29-730"
         help
-            Change the HomeKit Setup Code here.
-            Note: you must generate a new QR code if changed.
+            HomeKit setup code used for pairing.
+
+            If changed:
+                You must generate a new QR code.
 
     config ESP_SETUP_ID
         string "HomeKit Setup ID"
         default "F5Z1"
         help
-            Change the HomeKit Setup ID here.
-            Note: you must generate a new QR code if changed.
+            HomeKit setup ID used for QR code generation.
+
+            If changed:
+                You must generate a new QR code.
 
 endmenu
