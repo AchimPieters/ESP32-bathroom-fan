@@ -16,7 +16,7 @@ controller** based on ESP32 using:
 -   Identify LED
 -   Fully autonomous offline operation
 
-------------------------------------------------------------------------
+* * *
 
 # Overview
 
@@ -31,10 +31,10 @@ It is a **smart bathroom ventilation controller** designed to:
 -   Return safely to automatic mode after manual override
 -   Operate fully offline if HomeKit is unavailable
 
-The control logic runs locally on the ESP32.\
+The control logic runs locally on the ESP32.\\
 HomeKit is optional for remote control and monitoring.
 
-------------------------------------------------------------------------
+* * *
 
 # Ventilation Logic (ISO-style Behavior)
 
@@ -51,12 +51,14 @@ The fan stops only when:
 
 This prevents oscillation and short cycling.
 
-------------------------------------------------------------------------
+* * *
 
 # Fan Speeds
 
   Mode   Output Level
-  ------ --------------
+
+* * *
+
   LOW    30%
   MID    60%
   HIGH   100%
@@ -64,7 +66,7 @@ This prevents oscillation and short cycling.
 Fan control uses **active-low GPIO pulses** to simulate remote button
 presses.
 
-------------------------------------------------------------------------
+* * *
 
 # Manual Override
 
@@ -75,7 +77,7 @@ The user can control the fan from HomeKit:
 
 After **20 minutes**, the system automatically returns to AUTO mode.
 
-------------------------------------------------------------------------
+* * *
 
 # Sensor Processing
 
@@ -86,14 +88,14 @@ To ensure stable readings:
 -   Relative rise detection identifies shower events
 -   Delta-based reporting prevents noise notifications
 
-------------------------------------------------------------------------
+* * *
 
 # HAP-Safe Notification Strategy
 
 To comply with Apple HAP guidelines:
 
--   Temperature notify only if change \> 0.2°C
--   Humidity notify only if change \> 0.5%
+-   Temperature notify only if change > 0.2°C
+-   Humidity notify only if change > 0.5%
 -   Minimum notify interval enforced
 -   Spike detection allows temporary faster reporting
 -   Maximum events per minute limited
@@ -105,23 +107,23 @@ This prevents:
 -   OTA instability
 -   HomeKit disconnects
 
-------------------------------------------------------------------------
+* * *
 
 # Lifecycle Manager Integration
 
 ## Included Headers
 
-``` c
+```c
 #include "esp32-lcm.h"
 #include <button.h>
 #include "sht3x.h"
 ```
 
-------------------------------------------------------------------------
+* * *
 
 ## Firmware Version & OTA
 
-``` c
+```c
 homekit_characteristic_t revision =
     HOMEKIT_CHARACTERISTIC_(FIRMWARE_REVISION, LIFECYCLE_DEFAULT_FW_VERSION);
 
@@ -133,13 +135,13 @@ OTA can be triggered from:
 -   Home app
 -   Hardware button
 
-------------------------------------------------------------------------
+* * *
 
 # Wi-Fi Handling
 
 Wi-Fi is started using Lifecycle Manager:
 
-``` c
+```c
 wifi_start(on_wifi_ready);
 ```
 
@@ -149,35 +151,41 @@ The device:
 -   Supports provisioning
 -   Works offline if Wi-Fi is unavailable
 
-------------------------------------------------------------------------
+* * *
 
 # Hardware Button
 
 Configured using `esp32-button`.
 
   Action         Result
-  -------------- ---------------------------------
+
+* * *
+
   Single press   Request OTA update
   Double press   Reset HomeKit pairing
   Long press     Factory reset (Wi-Fi + HomeKit)
 
-------------------------------------------------------------------------
+* * *
 
 # Identify LED
 
 Used for HomeKit identify.
 
   State   LED
-  ------- -----
+
+* * *
+
   HIGH    ON
   LOW     OFF
 
-------------------------------------------------------------------------
+* * *
 
 # Wiring
 
   Name                       Description       Default
-  -------------------------- ----------------- --------------
+
+* * *
+
   CONFIG_ESP_LED_GPIO        Identify LED      2
   CONFIG_ESP_BUTTON_GPIO     Hardware button   32
   CONFIG_ESP_FAN_LOW_GPIO    Fan LOW pulse     configurable
@@ -189,20 +197,20 @@ Used for HomeKit identify.
 
   ![scheme](scheme.png)
 
-------------------------------------------------------------------------
+* * *
 
 # Requirements
 
--   ESP-IDF \>= 5.0
--   achimpieters/esp32-homekit \>= 1.3.3
--   achimpieters/esp32-button \>= 1.2.3
--   achimpieters/esp32-sht3x \^1.0.7
+-   ESP-IDF >= 5.0
+-   achimpieters/esp32-homekit >= 1.3.3
+-   achimpieters/esp32-button >= 1.2.3
+-   achimpieters/esp32-sht3x \\^1.0.7
 -   wolfssl
 -   mdns
 
-------------------------------------------------------------------------
+* * *
 
-#  Expected Behavior
+# Expected Behavior
 
 After flashing:
 
@@ -215,7 +223,7 @@ After flashing:
 
 Manual override automatically returns to AUTO after 20 minutes.
 
-------------------------------------------------------------------------
+* * *
 
-**StudioPieters®**\
+**StudioPieters®**\\
 Professional Embedded HomeKit Solutions

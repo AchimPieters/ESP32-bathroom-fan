@@ -15,14 +15,14 @@
 
 #define HOMEKIT_CHARACTERISTIC_CUSTOM_OTA_TRIGGER HOMEKIT_CUSTOM_UUID("F0000001")
 #define HOMEKIT_DECLARE_CHARACTERISTIC_CUSTOM_OTA_TRIGGER(_value, ...) \
-    .type = HOMEKIT_CHARACTERISTIC_CUSTOM_OTA_TRIGGER, \
-    .description = "FirmwareUpdate", \
-    .format = homekit_format_bool, \
-    .permissions = homekit_permissions_paired_read \
-        | homekit_permissions_paired_write \
-        | homekit_permissions_notify, \
-    .value = HOMEKIT_BOOL_(_value), \
-    ##__VA_ARGS__
+        .type = HOMEKIT_CHARACTERISTIC_CUSTOM_OTA_TRIGGER, \
+        .description = "FirmwareUpdate", \
+        .format = homekit_format_bool, \
+        .permissions = homekit_permissions_paired_read \
+                       | homekit_permissions_paired_write \
+                       | homekit_permissions_notify, \
+        .value = HOMEKIT_BOOL_(_value), \
+        ## __VA_ARGS__
 
 #define API_OTA_TRIGGER HOMEKIT_CHARACTERISTIC_(CUSTOM_OTA_TRIGGER, false)
 
@@ -43,10 +43,10 @@ extern "C" {
 #endif
 
 typedef enum {
-    LIFECYCLE_POST_RESET_NONE = 0,
-    LIFECYCLE_POST_RESET_REASON_HOMEKIT = 1,
-    LIFECYCLE_POST_RESET_REASON_FACTORY = 2,
-    LIFECYCLE_POST_RESET_REASON_UPDATE = 3,
+        LIFECYCLE_POST_RESET_NONE = 0,
+        LIFECYCLE_POST_RESET_REASON_HOMEKIT = 1,
+        LIFECYCLE_POST_RESET_REASON_FACTORY = 2,
+        LIFECYCLE_POST_RESET_REASON_UPDATE = 3,
 } lifecycle_post_reset_reason_t;
 
 void lifecycle_log_post_reset_state(const char *log_tag);

@@ -2,43 +2,69 @@ menu "StudioPieters"
 
     config ESP_LED_GPIO
         int "Set the GPIO for the LED"
-        default 2
+        default 2  if IDF_TARGET_ESP32
+        default 8  if IDF_TARGET_ESP32C3
+        range 0 39 if IDF_TARGET_ESP32
+        range 0 21 if IDF_TARGET_ESP32C3
         help
             The GPIO number the LED is connected to.
+            ESP32: GPIO2 commonly used on devkits.
+            ESP32-C3: GPIO8 commonly used on devkits.
 
     config ESP_BUTTON_GPIO
         int "Button GPIO"
-        default 32
+        default 32 if IDF_TARGET_ESP32
+        default 9  if IDF_TARGET_ESP32C3
+        range 0 39 if IDF_TARGET_ESP32
+        range 0 21 if IDF_TARGET_ESP32C3
         help
-            GPIO van de knop (actief laag als je button_config_default(button_active_low) gebruikt).
+            GPIO van de knop (actief laag bij gebruik van button_active_low).
 
     config ESP_FAN_LOW_GPIO
         int "Remote button GPIO - LOW"
-        default 25
+        default 25 if IDF_TARGET_ESP32
+        default 4  if IDF_TARGET_ESP32C3
+        range 0 39 if IDF_TARGET_ESP32
+        range 0 21 if IDF_TARGET_ESP32C3
         help
-            ESP32 GPIO die naar de LOW-knop pad van de originele remote gaat (active-low naar GND via open-drain).
+            GPIO die naar de LOW-knop pad van de originele remote gaat
+            (active-low naar GND via open-drain).
 
     config ESP_FAN_MED_GPIO
         int "Remote button GPIO - MED"
-        default 26
+        default 26 if IDF_TARGET_ESP32
+        default 5  if IDF_TARGET_ESP32C3
+        range 0 39 if IDF_TARGET_ESP32
+        range 0 21 if IDF_TARGET_ESP32C3
         help
-            ESP32 GPIO die naar de MED-knop pad van de originele remote gaat (active-low naar GND via open-drain).
+            GPIO die naar de MED-knop pad van de originele remote gaat
+            (active-low naar GND via open-drain).
 
     config ESP_FAN_HIGH_GPIO
         int "Remote button GPIO - HIGH"
-        default 27
+        default 27 if IDF_TARGET_ESP32
+        default 6  if IDF_TARGET_ESP32C3
+        range 0 39 if IDF_TARGET_ESP32
+        range 0 21 if IDF_TARGET_ESP32C3
         help
-            ESP32 GPIO die naar de HIGH-knop pad van de originele remote gaat (active-low naar GND via open-drain).
+            GPIO die naar de HIGH-knop pad van de originele remote gaat
+            (active-low naar GND via open-drain).
 
     config I2C_MASTER_SCL
         int "I2C SCL GPIO (SHT3x)"
-        default 22
+        default 22 if IDF_TARGET_ESP32
+        default 7  if IDF_TARGET_ESP32C3
+        range 0 39 if IDF_TARGET_ESP32
+        range 0 21 if IDF_TARGET_ESP32C3
         help
             GPIO voor I2C SCL naar de SHT3x.
 
     config I2C_MASTER_SDA
         int "I2C SDA GPIO (SHT3x)"
-        default 21
+        default 21 if IDF_TARGET_ESP32
+        default 6  if IDF_TARGET_ESP32C3
+        range 0 39 if IDF_TARGET_ESP32
+        range 0 21 if IDF_TARGET_ESP32C3
         help
             GPIO voor I2C SDA naar de SHT3x.
 
@@ -52,12 +78,14 @@ menu "StudioPieters"
         string "HomeKit Setup Code"
         default "374-29-730"
         help
-            If you want to change the HomeKit Setup Code, you can do that here (Note: you need to make a new QR-CODE To make it work)
+            Change the HomeKit Setup Code here.
+            Note: you must generate a new QR code if changed.
 
     config ESP_SETUP_ID
         string "HomeKit Setup ID"
         default "F5Z1"
         help
-            If you want to change the HomeKit Setup ID, you can do that here (Note: you need to make a new QR-CODE To make it work)
+            Change the HomeKit Setup ID here.
+            Note: you must generate a new QR code if changed.
 
 endmenu
