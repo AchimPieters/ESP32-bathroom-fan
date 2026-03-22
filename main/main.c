@@ -141,6 +141,34 @@ static bool auto_mode = true;
 static TickType_t fan_started_at = 0;
 static TickType_t manual_started_at = 0;
 
+static bool led_gpio_is_valid(int gpio)
+{
+        if (gpio < 0) return false;
+#if CONFIG_IDF_TARGET_ESP32C3
+        switch (gpio) {
+        case 0:
+        case 1:
+        case 2:
+        case 3:
+        case 4:
+        case 5:
+        case 6:
+        case 7:
+        case 8:
+        case 10:
+        case 18:
+        case 19:
+        case 20:
+        case 21:
+                return true;
+        default:
+                return false;
+        }
+#else
+        return gpio <= 32;
+#endif
+}
+
 // ==================================================
 // FAN CONTROL
 // ==================================================
@@ -405,6 +433,11 @@ static void sensor_task(void *arg)
 void app_main(void)
 {
         ESP_ERROR_CHECK(lifecycle_nvs_init());
+
+        if (!led_gpio_is_valid(LED_GPIO)) {
+                ESP_LOGE("MAIN", "Invalid LED GPIO configured: %d", LED_GPIO);
+                return;
+        }
 
         gpio_reset_pin(LED_GPIO);
         gpio_set_direction(LED_GPIO, GPIO_MODE_OUTPUT);
