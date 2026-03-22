@@ -1,5 +1,14 @@
 menu "StudioPieters"
 
+    config LCM_RESTART_COUNTER_TIMEOUT_MS
+        int "Restart counter reset timeout (ms)"
+        default 5000
+        range 1 600000
+        help
+            Time window in milliseconds used by the lifecycle restart counter.
+            If no additional restart is observed within this timeout, the
+            consecutive restart counter is reset.
+
     #
     # LED
     #

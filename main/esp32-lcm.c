@@ -67,18 +67,16 @@ static bool s_wifi_started = false;
 static esp_netif_t *s_wifi_netif = NULL;
 
 static const uint32_t k_post_reset_magic = 0xC0DEC0DE;
-#ifndef CONFIG_LCM_RESTART_COUNTER_TIMEOUT_MS
-#define CONFIG_LCM_RESTART_COUNTER_TIMEOUT_MS 5000
-#endif
 
 #if CONFIG_LCM_RESTART_COUNTER_TIMEOUT_MS <= 0
 #error "CONFIG_LCM_RESTART_COUNTER_TIMEOUT_MS must be a positive value"
 #endif
 
+static const uint32_t RESTART_COUNTER_RESET_TIMEOUT_MS = CONFIG_LCM_RESTART_COUNTER_TIMEOUT_MS;
 static const uint64_t k_restart_counter_timeout_us =
-        ((uint64_t)CONFIG_LCM_RESTART_COUNTER_TIMEOUT_MS) * 1000ULL;
+        ((uint64_t)RESTART_COUNTER_RESET_TIMEOUT_MS) * 1000ULL;
 static const uint64_t k_restart_counter_timeout_ms =
-        k_restart_counter_timeout_us / 1000ULL;
+        RESTART_COUNTER_RESET_TIMEOUT_MS;
 static const char *k_restart_counter_namespace = "lcm";
 static const char *k_restart_counter_key = "restart_count";
 
