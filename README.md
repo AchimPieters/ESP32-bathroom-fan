@@ -55,13 +55,11 @@ This prevents oscillation and short cycling.
 
 # Fan Speeds
 
-  Mode   Output Level
-
-* * *
-
-  LOW    30%
-  MID    60%
-  HIGH   100%
+| Mode | Output |
+|------|--------|
+| LOW  | 30%   |
+| MID  | 60%   |
+| HIGH | 100%  |
 
 Fan control uses **active-low GPIO pulses** to simulate remote button
 presses.
@@ -155,49 +153,39 @@ The device:
 
 # Hardware Button
 
-Configured using `esp32-button`.
-
-  Action         Result
-
-* * *
-
-  Single press   Request OTA update
-  Double press   Reset HomeKit pairing
-  Long press     Factory reset (Wi-Fi + HomeKit)
-
-* * *
+| Action        | Result |
+|--------------|--------|
+| Single press | OTA |
+| Double press | Reset HomeKit |
+| Long press   | Factory reset |
 
 # Identify LED
 
 Used for HomeKit identify.
 
-  State   LED
+| State | LED |
+|------|-----|
+| HIGH | ON |
+| LOW  | OFF |
 
-* * *
 
-  HIGH    ON
-  LOW     OFF
-
-* * *
 
 # Wiring
 
-  Name                       Description       Default
+| Function | GPIO |
+|----------|------|
+| LED      | 8 |
+| Button   | 3 |
+| LOW      | 4 |
+| MID      | 5 |
+| HIGH     | 10 |
+| SDA      | 6 |
+| SCL      | 7 |
 
-* * *
-
-  CONFIG_ESP_LED_GPIO        Identify LED      2
-  CONFIG_ESP_BUTTON_GPIO     Hardware button   32
-  CONFIG_ESP_FAN_LOW_GPIO    Fan LOW pulse     configurable
-  CONFIG_ESP_FAN_MED_GPIO    Fan MID pulse     configurable
-  CONFIG_ESP_FAN_HIGH_GPIO   Fan HIGH pulse    configurable
-  CONFIG_I2C_MASTER_SCL      I2C SCL           22
-  CONFIG_I2C_MASTER_SDA      I2C SDA           21
-  CONFIG_SHT3X_I2C_ADDRESS   Sensor address    0x44
 
   ![scheme](scheme.png)
 
-* * *
+
 
 # Requirements
 
@@ -225,5 +213,4 @@ Manual override automatically returns to AUTO after 20 minutes.
 
 * * *
 
-**StudioPieters®**\\
-Professional Embedded HomeKit Solutions
+**Studio**Pieters® Professional Embedded HomeKit Solutions
