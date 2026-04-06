@@ -1,0 +1,31 @@
+name: ESP-IDF CI
+
+on:
+  push:
+    branches:
+      - main
+      - work
+  pull_request:
+
+jobs:
+  build:
+    name: Build (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [esp32, esp32c3]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup ESP-IDF
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v5.5.1
+          target: ${{ matrix.target }}
+          path: .
+          command: |
+            idf.py set-target ${{ matrix.target }}
+            idf.py build
