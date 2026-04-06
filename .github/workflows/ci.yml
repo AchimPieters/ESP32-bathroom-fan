@@ -12,10 +12,15 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: espressif/idf:release-v5.2
+    defaults:
+      run:
+        shell: bash
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Build with ESP-IDF
-        run: idf.py build
+        run: |
+          source /opt/esp/idf/export.sh
+          idf.py build
