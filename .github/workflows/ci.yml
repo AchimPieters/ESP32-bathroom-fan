@@ -1,0 +1,21 @@
+name: ESP-IDF CI
+
+on:
+  push:
+    branches:
+      - "**"
+  pull_request:
+
+jobs:
+  build:
+    name: Build firmware
+    runs-on: ubuntu-latest
+    container:
+      image: espressif/idf:release-v5.2
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build with ESP-IDF
+        run: idf.py build

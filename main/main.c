@@ -279,6 +279,20 @@ void fan_on_set(homekit_value_t value)
 
         if (!hk_fan_on) {
                 fan_set(FAN_OFF);
+                hk_speed = 0;
+                return;
+        }
+
+        if (hk_speed <= 0) {
+                hk_speed = 30;
+        }
+
+        if (hk_speed < 40) {
+                fan_set(FAN_LOW);
+        } else if (hk_speed < 80) {
+                fan_set(FAN_MID);
+        } else {
+                fan_set(FAN_HIGH);
         }
 }
 
@@ -378,7 +392,8 @@ static void sensor_task(void *arg)
                                         (xTaskGetTickCount()-fan_started_at)/
                                         pdMS_TO_TICKS(60000);
 
-                                if (runtime > MIN_RUNTIME_MIN &&
+                                if (fan_mode != FAN_OFF &&
+                                    runtime >= MIN_RUNTIME_MIN &&
                                     ema_hum < HUM_OFF &&
                                     ema_temp < TEMP_OFF)
                                 {
@@ -422,6 +437,11 @@ static void sensor_task(void *arg)
                         }
 
                         vTaskDelay(pdMS_TO_TICKS(spike_mode ? 3000 : 10000));
+                }
+                else
+                {
+                        ESP_LOGW("SENSOR", "SHT3X read failed, retrying in 2s");
+                        vTaskDelay(pdMS_TO_TICKS(2000));
                 }
         }
 }
