@@ -5,3 +5,5 @@ dependencies:
     version: ">=3.0.0"
   achimpieters/esp32-button:
     version: ">=1.2.3"
+  achimpieters/esp32-sht3x:
+    version: ">=1.0.7"

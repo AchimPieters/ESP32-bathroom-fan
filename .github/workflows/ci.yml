@@ -1,0 +1,36 @@
+name: ESP-IDF CI
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: esp-idf-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    container: espressif/idf:v5.5.1
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [esp32, esp32c3]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build project
+        run: |
+          python --version
+          if [ -n "$IDF_PATH" ] && [ -f "$IDF_PATH/export.sh" ]; then
+            . "$IDF_PATH/export.sh"
+          else
+            . /opt/esp/idf/export.sh
+          fi
+          idf.py --version
+          idf.py set-target ${{ matrix.target }}
+          idf.py build
