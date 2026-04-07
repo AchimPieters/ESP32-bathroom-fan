@@ -2,7 +2,6 @@ name: ESP-IDF CI
 
 on:
   push:
-    branches: ["**"]
   pull_request:
 
 concurrency:
