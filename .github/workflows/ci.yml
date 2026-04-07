@@ -23,11 +23,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Show ESP-IDF version
-        run: idf.py --version
-
       - name: Build project
         run: |
           python --version
+          if [ -n "$IDF_PATH" ] && [ -f "$IDF_PATH/export.sh" ]; then
+            . "$IDF_PATH/export.sh"
+          else
+            . /opt/esp/idf/export.sh
+          fi
+          idf.py --version
           idf.py set-target ${{ matrix.target }}
           idf.py build
