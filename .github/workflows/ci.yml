@@ -13,6 +13,7 @@ jobs:
   build:
     name: Build (${{ matrix.target }})
     runs-on: ubuntu-latest
+    container: espressif/idf:v5.5.1
     timeout-minutes: 25
     strategy:
       fail-fast: false
@@ -23,15 +24,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup ESP-IDF toolchain
-        uses: espressif/esp-idf-tools-action@v1
-        with:
-          esp_idf_version: v5.5.1
-
       - name: Show ESP-IDF version
         run: idf.py --version
 
       - name: Build project
         run: |
+          python --version
           idf.py set-target ${{ matrix.target }}
           idf.py build
