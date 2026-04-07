@@ -2,15 +2,18 @@ name: ESP-IDF CI
 
 on:
   push:
-    branches:
-      - main
-      - work
+    branches: ["**"]
   pull_request:
+
+concurrency:
+  group: esp-idf-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
     name: Build (${{ matrix.target }})
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
@@ -20,12 +23,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup ESP-IDF
-        uses: espressif/esp-idf-ci-action@v1
+      - name: Setup ESP-IDF toolchain
+        uses: espressif/esp-idf-tools-action@v1
         with:
           esp_idf_version: v5.5.1
-          target: ${{ matrix.target }}
-          path: .
-          command: |
-            idf.py set-target ${{ matrix.target }}
-            idf.py build
+
+      - name: Show ESP-IDF version
+        run: idf.py --version
+
+      - name: Build project
+        run: |
+          idf.py set-target ${{ matrix.target }}
+          idf.py build
