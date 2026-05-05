@@ -27,7 +27,7 @@ The controller is designed to simulate button presses on an existing fan remote 
 | Function | ESP32 default | ESP32-C3 default | Description |
 |---|---:|---:|---|
 | Status LED | GPIO 2 | GPIO 8 | Blinks during HomeKit identify |
-| Button | GPIO 32 | GPIO 3 | Active-low control button |
+| Button | GPIO 32 | GPIO 21 | Active-low control button |
 | Fan LOW pad | GPIO 25 | GPIO 4 | Open-drain active-low pulse |
 | Fan MED pad | GPIO 26 | GPIO 5 | Open-drain active-low pulse |
 | Fan HIGH pad | GPIO 27 | GPIO 10 | Open-drain active-low pulse |

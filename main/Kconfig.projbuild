@@ -33,7 +33,7 @@ menu "StudioPieters"
     config ESP_BUTTON_GPIO
         int "Button GPIO"
         default 32 if IDF_TARGET_ESP32
-        default 3  if IDF_TARGET_ESP32C3
+        default 21  if IDF_TARGET_ESP32C3
         range 0 39 if IDF_TARGET_ESP32
         range 0 21 if IDF_TARGET_ESP32C3
         help
@@ -41,7 +41,7 @@ menu "StudioPieters"
             Typically configured as active-low.
 
             ESP32-C3:
-                GPIO3 is recommended.
+                GPIO21 is recommended.
                 Avoid GPIO9 (BOOT button).
                 Avoid GPIO0 and GPIO2 (strapping pins).
 
