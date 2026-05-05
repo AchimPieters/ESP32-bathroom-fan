@@ -1,210 +1,251 @@
-# Lifecycle Manager LED Example
+# ESP32 Bathroom Fan
 
-This folder contains a complete HomeKit LED accessory that uses the **Lifecycle Manager (LCM)**. The guide below walks you step by step through converting the original demo (without LCM) into the new LCM-enabled version. It is written for beginners: for every section you learn what to add, why it matters, and what it does.
+HomeKit-enabled bathroom ventilation controller for ESP32 and ESP32-C3. The firmware reads an SHT3x temperature/humidity sensor, controls a multi-speed bathroom fan through open-drain GPIO pulses, and exposes the fan plus sensor readings to Apple HomeKit.
 
-## 1. Understand the basics
+This README reflects the current implementation in `main/main.c`, `main/Kconfig.projbuild`, and `main/idf_component.yml`.
 
-| Component | Without LCM | With LCM |
-|-----------|-------------|----------|
-| Wi-Fi management | Manually handle every Wi-Fi event yourself. | Call `wifi_start()` from the LCM to start Wi-Fi and reconnect automatically. |
-| Storage | Initialize and reset NVS manually. | `lifecycle_nvs_init()` performs the setup and logs the reset state. |
-| OTA updates & firmware versions | Not available. | The LCM exposes an OTA trigger and reads the firmware version from NVS. |
-| Restore/reset | Reset manually through HomeKit. | Use lifecycle functions for updates, factory resets, and the automatic reboot counter. |
+## Features
 
-The rest of this document shows how to update the old code to the new version, with an explanation at each step.
+- HomeKit fan accessory named **Bathroom Fan**.
+- HomeKit temperature sensor named **Bathroom Temperature**.
+- HomeKit humidity sensor named **Bathroom Humidity**.
+- Manual fan control from HomeKit using `On` and `Rotation Speed`.
+- Automatic fan control based on humidity, humidity rise, and temperature.
+- Quiet-first control strategy with low, medium, and high fan modes.
+- Night quiet mode from 22:00 until 07:00.
+- Emergency humidity override at high humidity levels.
+- SHT3x temperature/humidity sensor over I2C.
+- Exponential moving average filtering for smoother sensor readings.
+- HomeKit notification rate limiting to avoid excessive HAP updates.
+- Lifecycle Manager support for NVS initialization, firmware revision, OTA trigger, Wi-Fi startup, reset handling, and restart counter protection.
+- Hardware button actions for OTA, HomeKit reset, and factory reset.
 
-## 2. Include the headers
+## Hardware overview
 
-**Why:** The LCM and the button library provide ready-to-use functions. Import the right headers to access them.
+The controller is designed to simulate button presses on an existing fan remote or fan control board. The LOW, MED, and HIGH outputs are configured as open-drain GPIOs and pulse active-low for 150 ms.
 
-```c
-#include "esp32-lcm.h"   // pull in the Lifecycle Manager
-#include <button.h>       // button events without extra boilerplate
+| Function | ESP32 default | ESP32-C3 default | Description |
+|---|---:|---:|---|
+| Status LED | GPIO 2 | GPIO 8 | Blinks during HomeKit identify |
+| Button | GPIO 32 | GPIO 3 | Active-low control button |
+| Fan LOW pad | GPIO 25 | GPIO 4 | Open-drain active-low pulse |
+| Fan MED pad | GPIO 26 | GPIO 5 | Open-drain active-low pulse |
+| Fan HIGH pad | GPIO 27 | GPIO 10 | Open-drain active-low pulse |
+| I2C SCL | GPIO 22 | GPIO 7 | SHT3x clock |
+| I2C SDA | GPIO 21 | GPIO 6 | SHT3x data |
+| SHT3x address | `0x44` | `0x44` | Configurable, sometimes `0x45` |
+
+> Note: the current code maps both `FAN_OFF` and `FAN_LOW` to a pulse on the LOW GPIO. Keep this in mind when wiring the remote/control board.
+
+## HomeKit services
+
+The firmware exposes one HomeKit accessory with these services:
+
+| Service | Name | Characteristics |
+|---|---|---|
+| Accessory Information | Bathroom Fan | Name, manufacturer, serial number, model, firmware revision, identify |
+| Fan | Bathroom Fan | On, Rotation Speed, OTA trigger |
+| Temperature Sensor | Bathroom Temperature | Current Temperature |
+| Humidity Sensor | Bathroom Humidity | Current Relative Humidity |
+
+Default accessory metadata in the code:
+
+| Field | Value |
+|---|---|
+| Manufacturer | `StudioPieters®` |
+| Serial number | `R1TFL8J965HE` |
+| Model | `TY3V0LC/Q` |
+| HomeKit setup code | `374-29-730` |
+| HomeKit setup ID | `F5Z1` |
+
+## Fan control logic
+
+The firmware continuously reads the SHT3x sensor in `sensor_task` and applies offsets, EMA filtering, and baseline tracking.
+
+### Sensor calibration
+
+The current calibration constants are:
+
+| Constant | Value |
+|---|---:|
+| Temperature offset | `+0.8 °C` |
+| Humidity offset | `-10.0 %RH` |
+| EMA alpha | `0.2` |
+
+Humidity is clamped to `0..100 %RH` after applying the offset.
+
+### Automatic mode thresholds
+
+| Constant | Value | Meaning |
+|---|---:|---|
+| `HUM_OFF` | `58 %RH` | Fan can stop after minimum runtime when below this humidity |
+| `HUM_LOW_ON` | `60 %RH` | Low fan trigger |
+| `HUM_MID_ON` | `70 %RH` | Shower / medium trigger |
+| `HUM_HIGH_ON` | `80 %RH` | High fan trigger |
+| `HUM_EMERGENCY` | `85 %RH` | Emergency high fan trigger |
+| `HUM_RISE_MID` | `10 %RH` | Humidity rise trigger for shower detection |
+| `HUM_RISE_HIGH` | `18 %RH` | Humidity rise trigger for high fan |
+| `SHOWER_MIN_HUM` | `55 %RH` | Minimum humidity for rise-based shower detection |
+| `SHOWER_TEMP_RISE_HUM` | `5 %RH` | Humidity rise used together with temperature trigger |
+| `TEMP_ON` | `30 °C` | Temperature trigger for low fan |
+| `TEMP_MID_ON` | `32 °C` | Temperature trigger for medium fan |
+| `TEMP_OFF` | `28 °C` | Fan can stop after minimum runtime below this temperature |
+| `MIN_RUNTIME_MIN` | `10 min` | Minimum automatic runtime before stopping |
+| `MANUAL_TIMEOUT_MIN` | `20 min` | Manual HomeKit override timeout |
+
+### Mode selection
+
+In automatic mode the firmware chooses a target mode:
+
+- **High** when emergency humidity is reached, humidity is at least `80 %RH`, or humidity rise is at least `18 %RH`.
+- **Medium** when shower detection is true or temperature is at least `32 °C`.
+- **Low** when humidity is at least `60 %RH` or temperature is at least `30 °C`.
+- **Off** when no trigger is active and the minimum runtime / off thresholds allow it.
+
+When the fan is already running, the firmware keeps it running for at least 10 minutes. After that, it can stop when humidity is below `58 %RH` and temperature is below `28 °C`.
+
+### Night quiet mode
+
+Night quiet mode is active from **22:00** until **07:00** using SNTP time from `pool.ntp.org` and the configured CET/CEST timezone.
+
+During night mode the fan target is capped to **LOW**, unless emergency humidity is active.
+
+## Manual HomeKit control
+
+HomeKit writes to `On` or `Rotation Speed` switch the controller to manual mode for 20 minutes.
+
+| HomeKit value | Fan mode |
+|---:|---|
+| `On = false` or speed `<= 0` | Off |
+| Speed `< 40` | Low |
+| Speed `< 80` | Medium |
+| Speed `>= 80` | High |
+
+After the manual timeout, automatic mode is enabled again.
+
+## HomeKit notification safety
+
+Sensor notifications are only sent when values change enough and rate limits allow it.
+
+| Setting | Value |
+|---|---:|
+| Temperature delta | `0.2 °C` |
+| Humidity delta | `0.5 %RH` |
+| Temperature minimum interval | `30 s` |
+| Humidity normal interval | `15 s` |
+| Humidity spike interval | `5 s` |
+| Max events/min normal | `20` |
+| Max events/min spike | `35` |
+| Spike level | `70 %RH` or humidity rise `>= 10 %RH` |
+
+The sensor task runs every 10 seconds normally and every 3 seconds during spike mode.
+
+## Button actions
+
+The button uses the `achimpieters/esp32-button` component.
+
+| Button event | Action |
+|---|---|
+| Single press | Request Lifecycle Manager update and reboot |
+| Double press | Reset HomeKit pairing and reboot |
+| Long press | Factory reset and reboot |
+
+## Lifecycle Manager and Wi-Fi
+
+On boot the firmware:
+
+1. Initializes NVS with `lifecycle_nvs_init()`.
+2. Logs post-reset state and increments the restart counter.
+3. Configures the HomeKit firmware revision and OTA trigger.
+4. Initializes GPIO, button, I2C, and SHT3x.
+5. Starts the sensor task.
+6. Starts Wi-Fi with `wifi_start(on_wifi_ready)`.
+7. Starts SNTP and HomeKit after Wi-Fi is ready.
+
+Wi-Fi credentials are read from NVS namespace `wifi_cfg` using keys `wifi_ssid` and `wifi_password`. If credentials are missing, `wifi_start()` returns `ESP_ERR_NVS_NOT_FOUND` and logs that provisioning is required.
+
+The Lifecycle Manager also protects against boot loops: after 10 consecutive restarts within the configured timeout window it performs a factory reset countdown.
+
+## Configuration
+
+Run:
+
+```sh
+idf.py menuconfig
 ```
 
-**What it does:**
-- `esp32-lcm.h` gives you the lifecycle, OTA, and Wi-Fi helper functions.
-- `button.h` makes it easy to detect single, double, and long presses.
+Then open the **StudioPieters** menu to configure:
 
-Do not forget to use the `CONFIG_ESP_BUTTON_GPIO` macro so the button pin can be set through `menuconfig`.
+- restart counter timeout
+- LED GPIO
+- button GPIO
+- fan LOW/MED/HIGH GPIOs
+- SHT3x I2C SCL/SDA pins
+- SHT3x I2C address
+- HomeKit setup code
+- HomeKit setup ID
 
-## 3. Extend the HomeKit characteristics
+If you change the HomeKit setup code or setup ID, generate a new HomeKit QR code.
 
-**Why:** The LCM manages the firmware version and exposes a default OTA trigger. Add these characteristics to HomeKit so you can use them from the Home app.
+## Requirements
 
-Replace the manual firmware version with the LCM constant and add the OTA trigger:
+Dependencies are declared in `main/idf_component.yml`:
 
-```c
-homekit_characteristic_t revision =
-    HOMEKIT_CHARACTERISTIC_(FIRMWARE_REVISION, LIFECYCLE_DEFAULT_FW_VERSION);
-homekit_characteristic_t ota_trigger = API_OTA_TRIGGER;
+| Dependency | Version |
+|---|---|
+| ESP-IDF | `>=5.0,<7.0` |
+| `achimpieters/esp32-homekit` | `>=3.0.0` |
+| `achimpieters/esp32-button` | `>=1.2.3` |
+| `achimpieters/esp32-sht3x` | `>=1.0.7` |
+
+The main component builds from:
+
+- `main/main.c`
+- `main/esp32-lcm.c`
+
+## Build and flash
+
+Set the target once:
+
+```sh
+idf.py set-target esp32
+# or
+idf.py set-target esp32c3
 ```
 
-Then add `&ota_trigger` to the Lightbulb service. This allows you to start an update from the Home app without pressing a hardware button.
+Configure the project:
 
-## 4. Initialize the lifecycle in `app_main`
-
-**Why:** The LCM tracks the device state (reboot counter, firmware version, HomeKit data). Without this initialization the lifecycle features do not work.
-
-```c
-ESP_ERROR_CHECK(lifecycle_nvs_init());
-lifecycle_log_post_reset_state("INFORMATION");
-ESP_ERROR_CHECK(
-    lifecycle_configure_homekit(&revision, &ota_trigger, "INFORMATION"));
+```sh
+idf.py menuconfig
 ```
 
-**What it does:**
-- `lifecycle_nvs_init()` initializes NVS and prepares the lifecycle tables.
-- `lifecycle_log_post_reset_state()` logs whether you booted after a brownout, crash, etc.
-- `lifecycle_configure_homekit()` links the OTA trigger and firmware version to HomeKit.
+Build, flash, and monitor:
 
-## 5. Let the LCM start Wi-Fi
-
-**Why:** In the old code you had to register events and call `esp_wifi_*` functions manually. The LCM handles this and takes provisioning into account.
-
-```c
-esp_err_t wifi_err = wifi_start(on_wifi_ready);
+```sh
+idf.py build
+idf.py -p /dev/ttyUSB0 flash monitor
 ```
 
-**What it does:**
-- Starts Wi-Fi in station mode automatically.
-- Calls `on_wifi_ready()` when the connection is established.
-- Makes it clear whether provisioning is still required (`ESP_ERR_NVS_NOT_FOUND`).
+Adjust the serial port for your system.
 
-## 6. Buttons for updates and factory reset
+## Troubleshooting `set-target`
 
-**Why:** Hardware buttons can now trigger OTA updates or factory resets without writing your own timers and debouncing code.
+If `idf.py set-target <chip>` prints:
 
-```c
-button_config_t btn_cfg = button_config_default(button_active_low);
-btn_cfg.max_repeat_presses = 3;
-btn_cfg.long_press_time = 1000;
-
-if (button_create(BUTTON_GPIO, btn_cfg, button_callback, NULL)) {
-    ESP_LOGE("BUTTON", "Failed to initialize button");
-}
-```
-
-Handle the different events in the callback:
-
-```c
-void button_callback(button_event_t event, void *context) {
-    switch (event) {
-    case button_event_single_press:
-        lifecycle_request_update_and_reboot();
-        break;
-    case button_event_double_press:
-        homekit_server_reset();
-        esp_restart();
-        break;
-    case button_event_long_press:
-        lifecycle_factory_reset_and_reboot();
-        break;
-    }
-}
-```
-
-**What it does:**
-- **Single press:** requests an OTA update from the LCM and restarts afterwards.
-- **Double press:** resets the HomeKit pairing.
-- **Long press:** performs a full factory reset (Wi-Fi and HomeKit included).
-
-## 7. LED control and HomeKit logic
-
-The core LED helpers (`gpio_init`, `led_write`, `led_on_set`) stay almost the same. Add extra `ESP_LOGI` messages so the serial monitor shows when the LED toggles.
-
-## 8. Putting it all together
-
-Once you follow the steps above, the start of your file should look like this:
-
-```c
-#include "esp32-lcm.h"
-#include <button.h>
-
-#define BUTTON_GPIO CONFIG_ESP_BUTTON_GPIO
-#define LED_GPIO    CONFIG_ESP_LED_GPIO
-```
-
-And the `app_main` function:
-
-```c
-void app_main(void) {
-    ESP_ERROR_CHECK(lifecycle_nvs_init());
-    lifecycle_log_post_reset_state("INFORMATION");
-    ESP_ERROR_CHECK(lifecycle_configure_homekit(&revision, &ota_trigger,
-                                                "INFORMATION"));
-
-    gpio_init();
-
-    button_config_t btn_cfg = button_config_default(button_active_low);
-    btn_cfg.max_repeat_presses = 3;
-    btn_cfg.long_press_time = 1000;
-    if (button_create(BUTTON_GPIO, btn_cfg, button_callback, NULL)) {
-        ESP_LOGE("BUTTON", "Failed to initialize button");
-    }
-
-    esp_err_t wifi_err = wifi_start(on_wifi_ready);
-    if (wifi_err == ESP_ERR_NVS_NOT_FOUND) {
-        ESP_LOGW("WIFI", "WiFi configuration not found; provisioning required");
-    } else if (wifi_err != ESP_OK) {
-        ESP_LOGE("WIFI", "Failed to start WiFi: %s", esp_err_to_name(wifi_err));
-    }
-}
-```
-
-## 9. Expected behavior
-
-- **HomeKit characteristics** automatically show the correct firmware version.
-- **OTA** can be triggered from the Home app (Lifecycle service) or via the button (single press).
-- **Factory reset** is available through a long press or automatically after 10 quick restarts (configurable through `menuconfig`).
-- **Wi-Fi** starts automatically or requests provisioning if no credentials are stored.
-
-## 10. Wiring
-
-Connect the pins as described below (configurable via `menuconfig`):
-
-| Name | Description | Default |
-|------|-------------|---------|
-| `CONFIG_ESP_LED_GPIO` | GPIO for the LED | `2` |
-| `CONFIG_ESP_BUTTON_GPIO` | GPIO for the button | `9` |
-
-## 11. Schematic
-
-![HomeKit LED](https://github.com/AchimPieters/esp32-lifecycle-manager/blob/main/examples/led/scheme.png)
-
-## 12. Requirements
-
-- **idf version:** `>=5.0`
-- **espressif/mdns version:** `1.8.0`
-- **wolfssl/wolfssl version:** `5.7.6`
-- **achimpieters/esp32-homekit version:** `1.0.0`
-- **achimpieters/button version:** `1.2.3`
-
-## 13. Menuconfig tips
-
-- Set your GPIO numbers, Wi-Fi SSID, and password in the `StudioPieters` menu.
-- Adjust the `HomeKit Setup Code` and `Setup ID` if needed. Remember to generate a new QR code when you do.
-- Configure the reboot counter timeout in `Lifecycle Manager` to control automatic factory resets.
-
-By following these steps, you convert the original LED demo into a version that leverages the Lifecycle Manager. You gain OTA updates, consistent firmware information, and straightforward reset scenarios without complex extra code.
-
-
-## 14. Troubleshooting set-target
-
-If `idf.py set-target <chip>` prints this error:
-
-```
+```text
 Directory ".../build" doesn't seem to be a CMake build directory.
 Refusing to automatically delete files in this directory.
 ```
 
-remove the stale build folder once and re-run:
+remove the stale build folder and run the command again:
 
 ```sh
 rm -rf build
-idf.py set-target esp32c3   # or your target
-# ESP32-C5/C6 on IDF 6.0 may require preview mode:
-# idf.py --preview set-target esp32c5
+idf.py set-target esp32c3
 ```
 
-This happens when `build/` exists but was not created by CMake (for example, after copying files between environments).
+For ESP32-C5/C6 on ESP-IDF 6.0, preview mode may be required:
+
+```sh
+idf.py --preview set-target esp32c5
+```
