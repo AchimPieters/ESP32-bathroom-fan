@@ -705,7 +705,16 @@ void app_main(void) {
         }
 
         ESP_ERROR_CHECK(i2c_master_init());
-        ESP_ERROR_CHECK(sht3x_init(SHT3X_ADDR));
+
+        esp_err_t sht_err = ESP_FAIL;
+        for (int i = 0; i < 5 && sht_err != ESP_OK; i++) {
+                vTaskDelay(pdMS_TO_TICKS(20));
+                sht_err = sht3x_init(SHT3X_ADDR);
+        }
+        if (sht_err != ESP_OK) {
+                ESP_LOGE(TAG_MAIN, "SHT3x init failed (%s) — sensor readings unavailable",
+                         esp_err_to_name(sht_err));
+        }
 
         xTaskCreate(sensor_task, "sensor", 4096, NULL, 5, NULL);
 
