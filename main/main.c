@@ -689,7 +689,12 @@ void app_main(void) {
         gpio_set_direction(BUTTON_GPIO, GPIO_MODE_INPUT);
         gpio_set_pull_mode(BUTTON_GPIO, GPIO_PULLUP_ONLY);
 
-        button_config_t btn_cfg = button_config_default(button_active_low);
+        button_config_t btn_cfg = {
+                .active_level         = button_active_low,
+                .long_press_time      = 2000,
+                .repeat_press_timeout = 400,
+                .max_repeat_presses   = 3,
+        };
 
         if (button_create(BUTTON_GPIO, btn_cfg, button_callback, NULL)) {
                 ESP_LOGE(TAG_MAIN, "Button init failed");
