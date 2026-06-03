@@ -33,9 +33,11 @@
  #include <driver/i2c.h>
  #include <esp_err.h>
  #include <esp_log.h>
+ #include <esp_mac.h>
  #include <esp_system.h>
  #include <esp_netif_sntp.h>
  #include <freertos/FreeRTOS.h>
+ #include <freertos/semphr.h>
  #include <freertos/task.h>
  #include <homekit/characteristics.h>
  #include <homekit/homekit.h>
@@ -123,7 +125,6 @@ static esp_err_t i2c_master_init(void) {
  #define NIGHT_END_HOUR 7
 
  #define NIGHT_MAX_MODE FAN_LOW
- #define NIGHT_EMERGENCY_HUM 85.0f
 
 // ==================================================
 // HOMEKIT SAFE NOTIFY LIMITS
@@ -154,9 +155,17 @@ typedef enum {
 
 static fan_mode_t fan_mode = FAN_OFF;
 
+// Serialises access to the shared fan/control state between the HomeKit
+// setter callbacks and the sensor task. Created in app_main() before either
+// can run. fan_set() assumes the caller already holds this mutex.
+static SemaphoreHandle_t state_mutex = NULL;
+
 static float ema_temp = 0;
 static float ema_hum = 0;
 static float baseline_humidity = 0;
+
+static bool ema_initialized = false;
+static bool baseline_initialized = false;
 
 static float last_notified_temp = 0;
 static float last_notified_hum = 0;
@@ -259,9 +268,16 @@ static void pulse(gpio_num_t pin) {
         gpio_set_level(pin, 1);
 }
 
+// Caller must hold state_mutex.
 static void fan_set(fan_mode_t mode) {
         if (fan_mode == mode) {
                 return;
+        }
+
+        // Track the start of every OFF -> running transition (manual or auto)
+        // so the minimum-runtime guarantee uses a correct reference.
+        if (fan_mode == FAN_OFF && mode != FAN_OFF) {
+                fan_started_at = xTaskGetTickCount();
         }
 
         fan_mode = mode;
@@ -344,7 +360,10 @@ void button_callback(button_event_t event, void *context) {
 // SAFE HOMEKIT NOTIFY
 // ==================================================
 
-static void safe_notify(homekit_characteristic_t *ch,
+// Returns true when the notification was actually sent, false when it was
+// dropped by the rate limiter. Callers should only advance their
+// "last notified value" when this returns true.
+static bool safe_notify(homekit_characteristic_t *ch,
                         homekit_value_t value,
                         TickType_t *last_tick,
                         uint32_t min_interval_ms,
@@ -357,17 +376,18 @@ static void safe_notify(homekit_characteristic_t *ch,
         }
 
         if (events_this_minute >= max_events_per_min) {
-                return;
+                return false;
         }
 
         if ((now - *last_tick) < pdMS_TO_TICKS(min_interval_ms)) {
-                return;
+                return false;
         }
 
         homekit_characteristic_notify(ch, value);
 
         *last_tick = now;
         events_this_minute++;
+        return true;
 }
 
 // ==================================================
@@ -383,12 +403,15 @@ static void fan_on_set(homekit_value_t value) {
                 return;
         }
 
+        xSemaphoreTake(state_mutex, portMAX_DELAY);
+
         hk_fan_on = value.bool_value;
         auto_mode = false;
         manual_started_at = xTaskGetTickCount();
 
         if (!hk_fan_on) {
                 fan_set(FAN_OFF);
+                xSemaphoreGive(state_mutex);
                 return;
         }
 
@@ -403,6 +426,8 @@ static void fan_on_set(homekit_value_t value) {
         } else {
                 fan_set(FAN_HIGH);
         }
+
+        xSemaphoreGive(state_mutex);
 }
 
 static homekit_value_t fan_speed_get(void) {
@@ -413,6 +438,8 @@ static void fan_speed_set(homekit_value_t value) {
         if (value.format != homekit_format_float && value.format != homekit_format_int) {
                 return;
         }
+
+        xSemaphoreTake(state_mutex, portMAX_DELAY);
 
         hk_speed = (value.format == homekit_format_float) ? value.float_value : (float)value.int_value;
         auto_mode = false;
@@ -427,6 +454,8 @@ static void fan_speed_set(homekit_value_t value) {
         } else {
                 fan_set(FAN_HIGH);
         }
+
+        xSemaphoreGive(state_mutex);
 }
 
 // ==================================================
@@ -452,12 +481,22 @@ static void sensor_task(void *arg) {
                                 h = 100.0f;
                         }
 
-                        ema_temp = (ema_temp == 0) ? t : EMA_ALPHA * t + (1 - EMA_ALPHA) * ema_temp;
-                        ema_hum = (ema_hum == 0) ? h : EMA_ALPHA * h + (1 - EMA_ALPHA) * ema_hum;
+                        if (!ema_initialized) {
+                                ema_temp = t;
+                                ema_hum = h;
+                                ema_initialized = true;
+                        } else {
+                                ema_temp = EMA_ALPHA * t + (1 - EMA_ALPHA) * ema_temp;
+                                ema_hum = EMA_ALPHA * h + (1 - EMA_ALPHA) * ema_hum;
+                        }
 
                         if (fan_mode == FAN_OFF) {
-                                baseline_humidity =
-                                        (baseline_humidity == 0) ? ema_hum : baseline_humidity * 0.98f + ema_hum * 0.02f;
+                                if (!baseline_initialized) {
+                                        baseline_humidity = ema_hum;
+                                        baseline_initialized = true;
+                                } else {
+                                        baseline_humidity = baseline_humidity * 0.98f + ema_hum * 0.02f;
+                                }
                         }
 
                         float rise = ema_hum - baseline_humidity;
@@ -467,9 +506,15 @@ static void sensor_task(void *arg) {
                         uint32_t max_epm = spike_mode ? MAX_EVENTS_PER_MIN_SPIKE : MAX_EVENTS_PER_MIN_NORMAL;
                         uint32_t hum_interval = spike_mode ? HUM_MIN_NOTIFY_MS_SPIKE : HUM_MIN_NOTIFY_MS_NORMAL;
 
-                        if (auto_mode) {
-                                bool night_mode = is_night_time();
+                        bool night_mode = is_night_time();
+                        bool emergency = ema_hum >= HUM_EMERGENCY;
 
+                        xSemaphoreTake(state_mutex, portMAX_DELAY);
+
+                        // Emergency humidity always engages automatic control, even
+                        // while a manual override is active, so the fan can clear a
+                        // dangerously humid room.
+                        if (auto_mode || emergency) {
                                 fan_mode_t target_mode = FAN_OFF;
 
                                 bool temp_low = ema_temp >= TEMP_ON;
@@ -480,7 +525,6 @@ static void sensor_task(void *arg) {
                                         (ema_temp >= TEMP_ON && rise >= SHOWER_TEMP_RISE_HUM) ||
                                         (ema_hum >= HUM_MID_ON);
 
-                                bool emergency = ema_hum >= HUM_EMERGENCY || ema_hum >= NIGHT_EMERGENCY_HUM;
                                 bool high_needed = emergency || ema_hum >= HUM_HIGH_ON || rise >= HUM_RISE_HIGH;
                                 bool mid_needed = shower_detected || temp_mid;
                                 bool low_needed = ema_hum >= HUM_LOW_ON || temp_low;
@@ -497,10 +541,6 @@ static void sensor_task(void *arg) {
 
                                 if (night_mode && !emergency && target_mode > NIGHT_MAX_MODE) {
                                         target_mode = NIGHT_MAX_MODE;
-                                }
-
-                                if (fan_mode == FAN_OFF && target_mode != FAN_OFF) {
-                                        fan_started_at = xTaskGetTickCount();
                                 }
 
                                 uint32_t runtime =
@@ -538,26 +578,28 @@ static void sensor_task(void *arg) {
                                 }
                         }
 
+                        xSemaphoreGive(state_mutex);
+
                         if (fabsf(ema_temp - last_notified_temp) > TEMP_NOTIFY_DELTA) {
                                 temperature_characteristic.value = HOMEKIT_FLOAT(ema_temp);
-                                safe_notify(&temperature_characteristic,
-                                            temperature_characteristic.value,
-                                            &last_temp_notify,
-                                            TEMP_MIN_NOTIFY_MS,
-                                            max_epm);
-
-                                last_notified_temp = ema_temp;
+                                if (safe_notify(&temperature_characteristic,
+                                                temperature_characteristic.value,
+                                                &last_temp_notify,
+                                                TEMP_MIN_NOTIFY_MS,
+                                                max_epm)) {
+                                        last_notified_temp = ema_temp;
+                                }
                         }
 
                         if (fabsf(ema_hum - last_notified_hum) > HUM_NOTIFY_DELTA) {
                                 humidity_characteristic.value = HOMEKIT_FLOAT(ema_hum);
-                                safe_notify(&humidity_characteristic,
-                                            humidity_characteristic.value,
-                                            &last_hum_notify,
-                                            hum_interval,
-                                            max_epm);
-
-                                last_notified_hum = ema_hum;
+                                if (safe_notify(&humidity_characteristic,
+                                                humidity_characteristic.value,
+                                                &last_hum_notify,
+                                                hum_interval,
+                                                max_epm)) {
+                                        last_notified_hum = ema_hum;
+                                }
                         }
 
                         ESP_LOGI(TAG_SENSOR,
@@ -568,7 +610,7 @@ static void sensor_task(void *arg) {
                                  rise,
                                  auto_mode,
                                  fan_mode,
-                                 is_night_time());
+                                 night_mode);
 
                         vTaskDelay(pdMS_TO_TICKS(spike_mode ? 3000 : 10000));
                 } else {
@@ -665,9 +707,27 @@ static void on_wifi_ready(void) {
 // ==================================================
 
 void app_main(void) {
+        state_mutex = xSemaphoreCreateMutex();
+        if (state_mutex == NULL) {
+                ESP_LOGE(TAG_MAIN, "Failed to create state mutex");
+                abort();
+        }
+
         ESP_ERROR_CHECK(lifecycle_nvs_init());
         lifecycle_log_post_reset_state(TAG_MAIN);
         ESP_ERROR_CHECK(lifecycle_configure_homekit(&revision, &ota_trigger, TAG_MAIN));
+
+        // Derive a per-device serial number from the factory MAC so that
+        // multiple units don't share an identity in the same HomeKit home.
+        static char serial_number[18];
+        uint8_t mac[6] = {0};
+        if (esp_read_mac(mac, ESP_MAC_WIFI_STA) == ESP_OK) {
+                snprintf(serial_number, sizeof(serial_number),
+                         "SP-%02X%02X%02X%02X%02X%02X",
+                         mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+                serial.value.string_value = serial_number;
+                serial.value.is_static = true;
+        }
 
         gpio_reset_pin(LED_GPIO);
         gpio_set_direction(LED_GPIO, GPIO_MODE_OUTPUT);

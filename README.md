@@ -53,7 +53,7 @@ Default accessory metadata in the code:
 | Field | Value |
 |---|---|
 | Manufacturer | `StudioPieters®` |
-| Serial number | `R1TFL8J965HE` |
+| Serial number | Derived per device from the Wi-Fi MAC (`SP-XXXXXXXXXXXX`) |
 | Model | `TY3V0LC/Q` |
 | HomeKit setup code | `374-29-730` |
 | HomeKit setup ID | `F5Z1` |
@@ -121,7 +121,7 @@ HomeKit writes to `On` or `Rotation Speed` switch the controller to manual mode 
 | Speed `< 80` | Medium |
 | Speed `>= 80` | High |
 
-After the manual timeout, automatic mode is enabled again.
+After the manual timeout, automatic mode is enabled again. As a safety override, emergency humidity (`>= 85 %RH`) always re-engages automatic control even while a manual override is active, so the fan can clear a dangerously humid room.
 
 ## HomeKit notification safety
 
