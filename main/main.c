@@ -34,6 +34,7 @@
  #include <esp_err.h>
  #include <esp_log.h>
  #include <esp_mac.h>
+ #include <esp_rom_sys.h>
  #include <esp_system.h>
  #include <esp_netif_sntp.h>
  #include <freertos/FreeRTOS.h>
@@ -68,6 +69,13 @@
  #define I2C_MASTER_SDA CONFIG_I2C_MASTER_SDA
  #define SHT3X_ADDR CONFIG_SHT3X_I2C_ADDRESS
 
+// After this many consecutive failed reads (~10s at the 2s retry interval)
+// assume the bus is wedged rather than just momentarily noisy, and attempt
+// recovery. Recovery itself is rate-limited so a persistently dead/absent
+// sensor doesn't spam bus resets forever.
+ #define SHT3X_FAILS_BEFORE_RECOVERY 5
+ #define SHT3X_RECOVERY_BACKOFF_MS 30000
+
 static const char *TAG_MAIN = "MAIN";
 static const char *TAG_SENSOR = "SENSOR";
 
@@ -83,6 +91,44 @@ static esp_err_t i2c_master_init(void) {
 
         ESP_ERROR_CHECK(i2c_param_config(I2C_MASTER_PORT, &conf));
         return i2c_driver_install(I2C_MASTER_PORT, conf.mode, 0, 0, 0);
+}
+
+// A wedged I2C bus (SHT3x left mid-transaction by an abrupt reset, or a
+// noise glitch) shows up as SDA permanently held low. Bit-bang up to 9 SCL
+// pulses to let the slave finish/release the line, then issue a STOP
+// condition before handing the bus back to the driver.
+static void i2c_bus_recover(void) {
+        ESP_LOGW(TAG_SENSOR, "Attempting I2C bus recovery (SDA=%d SCL=%d)",
+                 I2C_MASTER_SDA, I2C_MASTER_SCL);
+
+        i2c_driver_delete(I2C_MASTER_PORT);
+
+        gpio_set_direction(I2C_MASTER_SCL, GPIO_MODE_OUTPUT_OD);
+        gpio_set_direction(I2C_MASTER_SDA, GPIO_MODE_INPUT);
+        gpio_set_pull_mode(I2C_MASTER_SCL, GPIO_PULLUP_ONLY);
+        gpio_set_pull_mode(I2C_MASTER_SDA, GPIO_PULLUP_ONLY);
+        gpio_set_level(I2C_MASTER_SCL, 1);
+
+        for (int i = 0; i < 9 && gpio_get_level(I2C_MASTER_SDA) == 0; i++) {
+                gpio_set_level(I2C_MASTER_SCL, 0);
+                esp_rom_delay_us(5);
+                gpio_set_level(I2C_MASTER_SCL, 1);
+                esp_rom_delay_us(5);
+        }
+
+        // Manual STOP condition: SDA low-to-high while SCL is high.
+        gpio_set_direction(I2C_MASTER_SDA, GPIO_MODE_OUTPUT_OD);
+        gpio_set_level(I2C_MASTER_SDA, 0);
+        esp_rom_delay_us(5);
+        gpio_set_level(I2C_MASTER_SCL, 1);
+        esp_rom_delay_us(5);
+        gpio_set_level(I2C_MASTER_SDA, 1);
+        esp_rom_delay_us(5);
+
+        esp_err_t err = i2c_master_init();
+        if (err != ESP_OK) {
+                ESP_LOGE(TAG_SENSOR, "I2C re-install after recovery failed: %s", esp_err_to_name(err));
+        }
 }
 
 // ==================================================
@@ -465,11 +511,16 @@ static void fan_speed_set(homekit_value_t value) {
 static void sensor_task(void *arg) {
         (void)arg;
 
+        uint32_t consecutive_failures = 0;
+        TickType_t last_recovery_attempt = 0;
+
         while (1) {
                 float t = 0;
                 float h = 0;
 
                 if (sht3x_read_temperature_humidity(SHT3X_ADDR, &t, &h) == ESP_OK) {
+                        consecutive_failures = 0;
+
                         t += TEMP_OFFSET;
                         h += HUM_OFFSET;
 
@@ -614,7 +665,29 @@ static void sensor_task(void *arg) {
 
                         vTaskDelay(pdMS_TO_TICKS(spike_mode ? 3000 : 10000));
                 } else {
-                        ESP_LOGW(TAG_SENSOR, "SHT3X read failed, retrying in 2s");
+                        consecutive_failures++;
+                        ESP_LOGW(TAG_SENSOR, "SHT3X read failed (%u in a row), retrying in 2s",
+                                 (unsigned)consecutive_failures);
+
+                        TickType_t now = xTaskGetTickCount();
+                        bool backoff_elapsed =
+                                (now - last_recovery_attempt) > pdMS_TO_TICKS(SHT3X_RECOVERY_BACKOFF_MS);
+
+                        if (consecutive_failures >= SHT3X_FAILS_BEFORE_RECOVERY && backoff_elapsed) {
+                                last_recovery_attempt = now;
+
+                                i2c_bus_recover();
+
+                                esp_err_t reinit_err = sht3x_init(SHT3X_ADDR);
+                                if (reinit_err == ESP_OK) {
+                                        ESP_LOGI(TAG_SENSOR, "SHT3X recovered after I2C bus reset");
+                                        consecutive_failures = 0;
+                                } else {
+                                        ESP_LOGE(TAG_SENSOR, "SHT3X re-init still failing after recovery: %s",
+                                                 esp_err_to_name(reinit_err));
+                                }
+                        }
+
                         vTaskDelay(pdMS_TO_TICKS(2000));
                 }
         }
