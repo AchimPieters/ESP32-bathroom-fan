@@ -131,6 +131,42 @@ static void i2c_bus_recover(void) {
         }
 }
 
+// I2C "General Call Reset" (address 0x00, data byte 0x06). The SHT3x
+// documents this alongside its dedicated soft-reset command, and unlike the
+// dedicated command it doesn't require the sensor to already be listening
+// for its own address — some wedged states ACK the general call when they
+// won't ACK anything else. Failure here is not fatal on its own; it's only
+// ever used as an extra kick before re-issuing the real soft reset.
+static esp_err_t i2c_general_call_reset(void) {
+        i2c_cmd_handle_t cmd = i2c_cmd_link_create();
+        i2c_master_start(cmd);
+        i2c_master_write_byte(cmd, 0x00, true);
+        i2c_master_write_byte(cmd, 0x06, true);
+        i2c_master_stop(cmd);
+        esp_err_t err = i2c_master_cmd_begin(I2C_MASTER_PORT, cmd, pdMS_TO_TICKS(100));
+        i2c_cmd_link_delete(cmd);
+        return err;
+}
+
+// Full recovery cycle for a sensor that stopped responding: free a
+// potentially wedged bus (bit-banged clock pulses + STOP), try the broadcast
+// general-call reset, then the SHT3x's own soft-reset command. Returns
+// ESP_OK only once the sensor has actually ACKed the soft reset — if that
+// still fails after this sequence, the fault is almost certainly inside the
+// sensor's own analog/digital core rather than on the bus, which per
+// Sensirion's datasheet only a real VDD power-on-reset is guaranteed to
+// clear (no I2C command can force that).
+static esp_err_t sht3x_recover_and_reinit(void) {
+        i2c_bus_recover();
+
+        esp_err_t gc_err = i2c_general_call_reset();
+        if (gc_err != ESP_OK) {
+                ESP_LOGD(TAG_SENSOR, "I2C general call reset not ACKed: %s", esp_err_to_name(gc_err));
+        }
+
+        return sht3x_init(SHT3X_ADDR);
+}
+
 // ==================================================
 // QUIET-FIRST HUMIDITY CONTROL PARAMETERS
 // ==================================================
@@ -676,15 +712,20 @@ static void sensor_task(void *arg) {
                         if (consecutive_failures >= SHT3X_FAILS_BEFORE_RECOVERY && backoff_elapsed) {
                                 last_recovery_attempt = now;
 
-                                i2c_bus_recover();
-
-                                esp_err_t reinit_err = sht3x_init(SHT3X_ADDR);
+                                esp_err_t reinit_err = sht3x_recover_and_reinit();
                                 if (reinit_err == ESP_OK) {
                                         ESP_LOGI(TAG_SENSOR, "SHT3X recovered after I2C bus reset");
                                         consecutive_failures = 0;
                                 } else {
-                                        ESP_LOGE(TAG_SENSOR, "SHT3X re-init still failing after recovery: %s",
-                                                 esp_err_to_name(reinit_err));
+                                        ESP_LOGE(TAG_SENSOR,
+                                                 "SHT3X still not responding after bus recovery + general-call "
+                                                 "reset (%s). This points to the sensor's own internal state, "
+                                                 "not the bus — Sensirion's SHT3x has no I2C command that "
+                                                 "guarantees recovery from that; only removing and reapplying "
+                                                 "its VDD does. Will keep retrying every %ds in case it clears "
+                                                 "on its own.",
+                                                 esp_err_to_name(reinit_err),
+                                                 SHT3X_RECOVERY_BACKOFF_MS / 1000);
                                 }
                         }
 
@@ -839,13 +880,26 @@ void app_main(void) {
 
         ESP_ERROR_CHECK(i2c_master_init());
 
-        esp_err_t sht_err = ESP_FAIL;
-        for (int i = 0; i < 5 && sht_err != ESP_OK; i++) {
-                vTaskDelay(pdMS_TO_TICKS(20));
-                sht_err = sht3x_init(SHT3X_ADDR);
+        // A plain reboot (button, HomeKit "reset", the Eve app's firmware-update
+        // toggle, a watchdog reset, ...) power-cycles the ESP32 but NOT the
+        // SHT3x's own VDD rail, so a sensor left mid-transaction by the previous
+        // run can still be wedged when this code runs. Retrying the bare
+        // soft-reset command alone can't fix that — it only talks to a sensor
+        // that's already listening. Fall back to the full bus-recovery sequence
+        // (bit-banged clock pulses + general call reset) before giving up.
+        esp_err_t sht_err = sht3x_init(SHT3X_ADDR);
+        if (sht_err != ESP_OK) {
+                ESP_LOGW(TAG_MAIN, "SHT3x not responding at boot (%s); attempting bus recovery",
+                         esp_err_to_name(sht_err));
+                for (int i = 0; i < 3 && sht_err != ESP_OK; i++) {
+                        vTaskDelay(pdMS_TO_TICKS(50));
+                        sht_err = sht3x_recover_and_reinit();
+                }
         }
         if (sht_err != ESP_OK) {
-                ESP_LOGE(TAG_MAIN, "SHT3x init failed (%s) — sensor readings unavailable",
+                ESP_LOGE(TAG_MAIN,
+                         "SHT3x still not responding after bus recovery (%s) — sensor readings "
+                         "unavailable until the sensor's own retry loop succeeds or it is power-cycled",
                          esp_err_to_name(sht_err));
         }
 
